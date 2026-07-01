@@ -1,0 +1,4 @@
+interface:
+  display_name: "Remote Git Dev Workflow"
+  short_description: "Set up local, remote server, and GitHub collaboration safely."
+  default_prompt: "Use $remote-git-dev-workflow to set up a local development, GitHub, and remote server workflow for this project."
