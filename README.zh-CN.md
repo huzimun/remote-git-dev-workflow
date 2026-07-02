@@ -59,6 +59,40 @@ git pull --ff-only origin main
 
 除非是明确的应急恢复，不建议直接 push 到服务器上的已检出工作区。
 
+## 本地改完代码后，怎么放到服务器运行？
+
+默认推荐走 GitHub 或 GitLab：
+
+```text
+本地改代码 -> 本地提交 commit -> push 到 GitHub/GitLab -> 服务器 pull -> 服务器运行
+```
+
+这是最稳的默认流程。因为服务器每次运行的代码都能对应到一个 Git commit，后面更容易检查、复现、回滚，也更容易说明“这次结果是由哪一版代码跑出来的”。
+
+一个典型流程是：
+
+```bash
+git add .
+git commit -m "Describe the change"
+git push origin main
+ssh REMOTE_HOST_ALIAS "cd REMOTE_PROJECT_DIR && bash scripts/remote_update.sh"
+```
+
+直接传文件到服务器也可以，但只建议用于临时试错：
+
+```text
+本地改代码 -> 复制到服务器临时目录 -> 快速跑一下
+```
+
+不建议把文件直接覆盖到服务器的主项目目录。这样容易让服务器出现未提交的改动，之后 `git pull` 可能失败，也很难判断服务器到底跑的是哪一版代码。
+
+简单记法：
+
+- **正式运行、实验记录、多人协作**：走 GitHub/GitLab，先 push，再让服务器 pull。
+- **临时调试**：可以直接复制或 rsync，但最好复制到单独的临时运行目录，不要覆盖主项目目录。
+- **长任务运行时**：先创建运行锁，避免任务没结束时服务器代码被更新。
+- **多人或多个 agent 协作时**：使用分支或 pull request，避免互相覆盖。
+
 ## 仓库结构
 
 ```text

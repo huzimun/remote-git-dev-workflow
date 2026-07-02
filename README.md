@@ -61,6 +61,40 @@ git pull --ff-only origin main
 
 Direct pushes into a checked-out remote worktree should be reserved for explicit emergency recovery.
 
+## How Should Code Reach The Server?
+
+For normal work, use GitHub or GitLab as the handoff point:
+
+```text
+edit locally -> commit locally -> push to GitHub/GitLab -> pull on the server -> run on the server
+```
+
+This is the recommended default because every server run is tied to a Git commit. It is easier to review, reproduce, roll back, and explain later.
+
+A typical flow looks like this:
+
+```bash
+git add .
+git commit -m "Describe the change"
+git push origin main
+ssh REMOTE_HOST_ALIAS "cd REMOTE_PROJECT_DIR && bash scripts/remote_update.sh"
+```
+
+Use direct file transfer only for short-lived experiments:
+
+```text
+edit locally -> copy files to a temporary server directory -> run a quick test
+```
+
+Avoid copying files directly into the main server worktree. It can leave uncommitted changes on the server, make `git pull` fail, and make it unclear which code version produced a result.
+
+Recommended rule of thumb:
+
+- Use **GitHub/GitLab push and server pull** for official runs, experiments, shared work, and anything that should be reproducible.
+- Use **direct copy or rsync** only for quick debugging, and copy into a separate temporary run directory rather than the main project checkout.
+- Use a **run lock** before long-running jobs so the server code is not updated while a job is still using it.
+- Use **branches or pull requests** when multiple people or agents may edit the same project.
+
 ## Repository Structure
 
 ```text
