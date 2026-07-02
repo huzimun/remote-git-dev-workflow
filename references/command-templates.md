@@ -36,12 +36,48 @@ ssh -o BatchMode=yes REMOTE_HOST_ALIAS "echo ok && hostname"
 
 ## Center Remote
 
-Local remotes:
+Inspect first:
 
 ```powershell
-git -C LOCAL_DIR remote rename origin server
+git -C LOCAL_DIR status --short
+git -C LOCAL_DIR log --oneline -5
+git -C LOCAL_DIR remote -v
+git -C LOCAL_DIR branch --show-current
+```
+
+If there is no Git repository yet:
+
+```powershell
+git -C LOCAL_DIR init
+git -C LOCAL_DIR branch -M DEFAULT_BRANCH
+git -C LOCAL_DIR add .
+git -C LOCAL_DIR commit -m "Initialize PROJECT_NAME repository"
+git -C LOCAL_DIR remote add origin CENTER_REMOTE_URL
+git -C LOCAL_DIR push -u origin DEFAULT_BRANCH
+```
+
+If `origin` already points to `CENTER_REMOTE_URL`, keep it:
+
+```powershell
+git -C LOCAL_DIR remote -v
+git -C LOCAL_DIR branch -M DEFAULT_BRANCH
+git -C LOCAL_DIR branch --set-upstream-to=origin/DEFAULT_BRANCH DEFAULT_BRANCH
+```
+
+If there is no `origin` remote:
+
+```powershell
+git -C LOCAL_DIR remote add origin CENTER_REMOTE_URL
+git -C LOCAL_DIR push -u origin DEFAULT_BRANCH
+```
+
+If `origin` points to a server worktree, old mirror, or wrong repository, preserve it under a backup name before adding the center remote:
+
+```powershell
+git -C LOCAL_DIR remote rename origin legacy-origin
 git -C LOCAL_DIR remote add origin CENTER_REMOTE_URL
 git -C LOCAL_DIR branch -M DEFAULT_BRANCH
+git -C LOCAL_DIR push -u origin DEFAULT_BRANCH
 ```
 
 Server remote:
@@ -55,7 +91,7 @@ git branch --set-upstream-to=origin/DEFAULT_BRANCH DEFAULT_BRANCH
 
 ## Clean History
 
-Use when existing commits contain data or secrets:
+Use only when existing commits contain data or secrets and the user has accepted a clean-history migration:
 
 ```powershell
 git -C LOCAL_DIR checkout --orphan clean-main
@@ -65,6 +101,8 @@ git -C LOCAL_DIR commit -m "Initialize PROJECT_NAME repository"
 git -C LOCAL_DIR branch -M DEFAULT_BRANCH
 git -C LOCAL_DIR push --force-with-lease origin DEFAULT_BRANCH
 ```
+
+Do not use the clean-history flow automatically when the target GitHub/GitLab repository is shared, public, or already has important history. In those cases, scan and report the problem first.
 
 After a clean-history force push, update the server once:
 

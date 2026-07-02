@@ -30,6 +30,26 @@ Collect or infer these values before changing state:
 
 If any value is missing, inspect local SSH config, Git remotes, repo layout, and remote paths before asking the user.
 
+## Existing Repository Decision Tree
+
+Always inspect the current Git state before changing remotes or history:
+
+```bash
+git status --short
+git log --oneline -5
+git remote -v
+git branch --show-current
+```
+
+Choose one path:
+
+- **No `.git` directory**: initialize a new repository, add ignore rules, make the first commit, then add the center remote as `origin`.
+- **Existing Git history, no center remote**: keep the history if it is clean, add the center remote as `origin`, and set the upstream branch.
+- **Existing `origin` already points to the desired GitHub/GitLab repository**: keep `origin`; do not rename it. Only verify branch/upstream settings and history cleanliness.
+- **Existing `origin` points to a server worktree, old mirror, or wrong repository**: rename it to `server`, `legacy-origin`, or another descriptive backup name, then add the desired center remote as `origin`.
+- **Existing GitHub/GitLab repository is shared or has important history**: do not rewrite history automatically. Scan first, report risks, and ask before any force push or clean-history migration.
+- **Existing history contains datasets, secrets, or large forbidden files**: do not push until the user chooses between clean-history publication, history filtering, or keeping the existing private history with rotated secrets.
+
 ## Workflow
 
 1. **Verify SSH first**
@@ -39,13 +59,16 @@ If any value is missing, inspect local SSH config, Git remotes, repo layout, and
 
 2. **Choose the center remote**
    - Prefer GitHub/GitLab as `origin`.
-   - Keep direct server remotes named `server`, `a800`, or similar only for backup/emergency.
+   - Inspect existing remotes before changing them.
+   - Preserve an existing correct `origin`.
+   - Keep direct server remotes named `server`, `server-backup`, or similar only for backup/emergency.
    - If converting from direct push-to-server, remove reliance on `receive.denyCurrentBranch=updateInstead`.
 
 3. **Clean Git history before publishing**
    - If the existing repository has datasets, secrets, or huge files in old commits, create a clean history before pushing to the center remote.
    - Do not rely on `git rm --cached` alone when old commits already contain sensitive or large files.
    - Preserve local/remote data on disk as ignored files, not tracked Git content.
+   - Treat force pushes and remote resets as destructive operations that require an explicit reason and confirmation.
 
 4. **Write ignore and secret policy**
    - Ignore datasets, outputs, caches, archives, checkpoints, model weights, local environment files, and API keys.
