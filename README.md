@@ -21,7 +21,18 @@ Use this skill when you need to:
 
 ## Installation
 
-Copy this repository into the Codex skills directory for the user that should use it:
+Recommended: ask Codex to install the skill from GitHub with the built-in `skill-installer` skill.
+
+Use this prompt in Codex:
+
+```text
+Use $skill-installer to install the skill from this GitHub repository:
+https://github.com/huzimun/remote-git-dev-workflow.git
+
+Install it as remote-git-dev-workflow, prefer the git install method, and verify that SKILL.md, agents/, references/, and scripts/ are all present after installation.
+```
+
+Codex should install it into the current user's skills directory:
 
 ```text
 ~/.codex/skills/remote-git-dev-workflow
@@ -31,6 +42,23 @@ On Windows, the equivalent path is usually:
 
 ```text
 C:\Users\<user>\.codex\skills\remote-git-dev-workflow
+```
+
+If you install manually instead, clone the full repository into that directory. Do not copy only the root files; the `references/` and `scripts/` directories are part of the skill.
+
+After installation, check that these files and directories exist:
+
+```text
+SKILL.md
+agents/
+references/
+scripts/
+```
+
+If an installer produced a partial checkout that only contains root files, reinstall with the git method or disable sparse checkout in that skill directory:
+
+```bash
+git sparse-checkout disable
 ```
 
 After installation, restart or reload Codex if needed so the skill can be discovered.
