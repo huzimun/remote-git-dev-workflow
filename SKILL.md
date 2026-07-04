@@ -1,19 +1,28 @@
 ---
 name: remote-git-dev-workflow
-description: Set up and operate a safe local development + GitHub/GitLab center repository + remote server execution workflow. Use when a user wants Codex or another agent to connect to a server by SSH, clone or rebuild a project locally, create or migrate a GitHub/GitLab repository, exclude datasets/secrets/outputs from Git history, push local code changes, pull/update a remote runtime workspace, configure conda or virtualenv environments, add smoke tests, or prevent remote running jobs from being overwritten.
+description: Set up and operate a safe local development + GitHub/GitLab version control + SSH deploy + remote server execution workflow. Use when a user wants Codex or another agent to manage code locally, publish to GitHub/GitLab, sync committed code snapshots to a server by SSH, run code remotely, configure conda or virtualenv environments, exclude datasets/secrets/outputs from Git history, add smoke tests, or prevent remote running jobs from being overwritten.
 ---
 
 # Remote Git Dev Workflow
 
 ## Core Model
 
-Use a center repository as the source of truth:
+Use GitHub/GitLab as the long-term source of truth, and choose the simplest server update mode that the environment supports.
+
+Default mode: **SSH Sync Mode**. Use this when the server cannot reliably access GitHub/GitLab or cannot run Codex CLI login:
+
+```text
+local workstation/Codex -> origin: GitHub or GitLab
+local committed Git snapshot -> SSH deploy -> remote server runtime
+```
+
+Advanced mode: **Server Pull Mode**. Use this only when the server can reliably access the center repository:
 
 ```text
 local workstation/Codex -> origin: GitHub or GitLab -> remote server runtime
 ```
 
-Avoid pushing directly into a checked-out remote worktree except for explicit emergency recovery. Prefer `git pull --ff-only origin main` on the server, guarded by a run lock and followed by a smoke test.
+In SSH Sync Mode, deploy only a clean local `HEAD` snapshot, never hand-copy individual files. In Server Pull Mode, prefer `git pull --ff-only origin main` on the server, guarded by a run lock and followed by a smoke test. Avoid pushing directly into a checked-out remote worktree except for explicit emergency recovery.
 
 ## Required Inputs
 
@@ -23,6 +32,8 @@ Collect or infer these values before changing state:
 - `LOCAL_DIR`: local working copy path.
 - `REMOTE_HOST_ALIAS`: SSH alias such as `gpu-server` or `prod-runner`.
 - `REMOTE_PROJECT_DIR`: absolute or shell-expanded server project path.
+- `REMOTE_DEPLOY_DIR`: remote deployment base path, such as `~/Deploy/PROJECT_NAME`, for SSH Sync Mode.
+- `REMOTE_RUNS_DIR`: remote runs base path, such as `~/Runs/PROJECT_NAME`, for SSH Sync Mode.
 - `CENTER_REMOTE_URL`: `git@github.com:OWNER/REPO.git` or GitLab equivalent.
 - `DEFAULT_BRANCH`: usually `main`.
 - `REMOTE_ENV`: conda/venv name, such as `project-env`, if the server runs code in a managed Python environment.
@@ -50,6 +61,14 @@ Choose one path:
 - **Existing GitHub/GitLab repository is shared or has important history**: do not rewrite history automatically. Scan first, report risks, and ask before any force push or clean-history migration.
 - **Existing history contains datasets, secrets, or large forbidden files**: do not push until the user chooses between clean-history publication, history filtering, or keeping the existing private history with rotated secrets.
 
+## Mode Decision Tree
+
+Choose one path before adding scripts or changing server update commands:
+
+- **SSH Sync Mode, default**: local Codex edits a local working copy, local Git/GitHub keeps version history, committed snapshots are deployed to the server by SSH, and the server only runs code. Use this when the server cannot access GitHub/GitLab, cannot log in to Codex CLI, or should not hold credentials beyond SSH.
+- **Server Pull Mode, advanced**: local Codex edits locally, pushes to GitHub/GitLab, and the server updates with `git pull --ff-only`. Use this when the server can reliably access GitHub/GitLab and can safely store deploy credentials.
+- **Direct file copy, temporary only**: use only for disposable debugging in a temporary directory. Do not copy individual files into the main server worktree for official runs.
+
 ## Workflow
 
 1. **Verify SSH first**
@@ -76,15 +95,17 @@ Choose one path:
    - Replace hardcoded keys in scripts with environment variables and commit a `.env.example` with empty placeholders.
    - Scan staged content and reachable history before pushing.
 
-5. **Create remote update and smoke test**
+5. **Create remote update or deploy scripts**
    - Add a lightweight smoke test that does not call external paid APIs and does not require full benchmark data unless explicitly requested.
-   - Add a remote update script that checks a lock file, pulls from `origin`, activates the project runtime environment, and runs the smoke test.
+   - In SSH Sync Mode, add a local deploy script that requires a clean Git tree, archives `HEAD`, deploys it to `REMOTE_DEPLOY_DIR/releases/<commit>`, updates `current`, writes `.deploy_commit`, and runs the smoke test.
+   - In Server Pull Mode, add a remote update script that checks a lock file, pulls from `origin`, activates the project runtime environment, and runs the smoke test.
    - Keep a strict mode for full dependency import checks, but make the default smoke portable enough for fresh clones.
 
 6. **Operate the loop**
    - Local agent edits code.
    - Local agent verifies, commits, and pushes to `origin`.
-   - Remote server runs `scripts/remote_update.sh`.
+   - SSH Sync Mode: local agent deploys the clean committed snapshot by SSH, then runs on the server from a timestamped run directory.
+   - Server Pull Mode: remote server runs `scripts/remote_update.sh`.
    - Long-running jobs create `.run.lock` before starting and remove it only after completion.
 
 ## Command Templates
@@ -93,11 +114,11 @@ For full command templates, read [references/command-templates.md](references/co
 
 For data/secrets/history rules, read [references/data-secret-policy.md](references/data-secret-policy.md) before touching `.gitignore`, `.env`, or Git history.
 
-For reusable `remote_update.sh` and smoke-test skeletons, read [references/script-templates.md](references/script-templates.md) when adding workflow files to a repository.
+For reusable SSH deploy, remote run, `remote_update.sh`, and smoke-test skeletons, read [references/script-templates.md](references/script-templates.md) when adding workflow files to a repository.
 
 ## Bundled Scripts
 
-- `scripts/render_workflow_commands.py`: render parameterized command snippets for a new project from a JSON config. Use it to reduce quoting mistakes when preparing a migration plan.
+- `scripts/render_workflow_commands.py`: render parameterized command snippets for a new project from a JSON config. Use `mode: "ssh-sync"` or `mode: "server-pull"` to reduce quoting mistakes when preparing a migration plan.
 
 ## Safety Rules
 
@@ -105,5 +126,7 @@ For reusable `remote_update.sh` and smoke-test skeletons, read [references/scrip
 - Before destructive actions such as deleting old `.git` backups, rewriting history, or resetting a remote worktree, verify exact paths and explain the reason.
 - Prefer `git push --force-with-lease` over `git push --force` when history rewrite is required.
 - After a history rewrite, update server worktrees once with `git fetch` + controlled reset, then return to `pull --ff-only`.
+- In SSH Sync Mode, do not deploy when `git status --short` is non-empty. Commit first so every remote run maps to a GitHub/GitLab commit.
+- In SSH Sync Mode, deploy complete `git archive HEAD` snapshots instead of hand-copying individual files.
 - Never assume the remote non-interactive shell has conda initialized; explicitly source `conda.sh` or set `PROJECT_PYTHON`.
 - Keep generated workflow changes committed separately from unrelated project code unless the user asks for a single initial commit.

@@ -2,9 +2,9 @@
 
 [中文文档](README.zh-CN.md)
 
-Remote Git Dev Workflow is a Codex skill for setting up a safe collaboration loop between a local development machine, a GitHub or GitLab center repository, and a remote server runtime environment.
+Remote Git Dev Workflow is a Codex skill for setting up a safe collaboration loop between a local development machine, GitHub or GitLab version control, SSH deployment, and a remote server runtime environment.
 
-It is designed for projects where an agent edits code locally, publishes changes through Git, and runs or validates the project on a remote machine such as a GPU server.
+It is designed for projects where an agent edits code locally, keeps history in GitHub or GitLab, and runs or validates the project on a remote machine such as a GPU server.
 
 ## When To Use
 
@@ -16,7 +16,8 @@ Use this skill when you need to:
 - Keep datasets, outputs, model weights, archives, and secrets out of Git history.
 - Replace hardcoded API keys with environment variables and `.env.example`.
 - Add a lightweight smoke test for remote validation.
-- Add a remote update script that uses `git pull --ff-only`.
+- Deploy clean committed snapshots to a server by SSH when the server cannot access GitHub/GitLab.
+- Add a remote update script that uses `git pull --ff-only` when the server can access GitHub/GitLab.
 - Protect long-running remote jobs with a `.run.lock` file.
 
 ## Installation
@@ -75,13 +76,24 @@ Codex may also use it implicitly when the task involves SSH setup, remote develo
 
 ## Workflow Model
 
-The skill recommends using a center repository as the source of truth:
+The skill supports two modes.
+
+**SSH Sync Mode** is the recommended default:
+
+```text
+local workstation/Codex -> origin: GitHub or GitLab
+local committed Git snapshot -> SSH deploy -> remote server runtime
+```
+
+Use it when the server cannot reliably access GitHub/GitLab or cannot log in to Codex CLI. The server only needs SSH, bash, tar, and the project runtime environment.
+
+**Server Pull Mode** preserves the original workflow:
 
 ```text
 local workstation/Codex -> origin: GitHub or GitLab -> remote server runtime
 ```
 
-The remote server should normally update by pulling from the center repository:
+Use it when the server can reliably access the center repository. The remote server updates by pulling from the center repository:
 
 ```bash
 git pull --ff-only origin main
@@ -91,13 +103,13 @@ Direct pushes into a checked-out remote worktree should be reserved for explicit
 
 ## How Should Code Reach The Server?
 
-For normal work, use GitHub or GitLab as the handoff point:
+For the default SSH Sync Mode, use GitHub or GitLab for version history and SSH for server deployment:
 
 ```text
-edit locally -> commit locally -> push to GitHub/GitLab -> pull on the server -> run on the server
+edit locally -> commit locally -> push to GitHub/GitLab -> deploy committed snapshot by SSH -> run on the server
 ```
 
-This is the recommended default because every server run is tied to a Git commit. It is easier to review, reproduce, roll back, and explain later.
+This keeps every server run tied to a Git commit without requiring the server to access GitHub/GitLab or log in to Codex.
 
 A typical flow looks like this:
 
@@ -105,21 +117,23 @@ A typical flow looks like this:
 git add .
 git commit -m "Describe the change"
 git push origin main
-ssh REMOTE_HOST_ALIAS "cd REMOTE_PROJECT_DIR && bash scripts/remote_update.sh"
+powershell -ExecutionPolicy Bypass -File scripts/deploy_via_ssh.ps1
+ssh REMOTE_HOST_ALIAS "cd ~/Deploy/PROJECT_NAME/current && bash scripts/run_remote_release.sh"
 ```
 
-Use direct file transfer only for short-lived experiments:
+Use Server Pull Mode only when the server can reach GitHub/GitLab reliably:
 
 ```text
-edit locally -> copy files to a temporary server directory -> run a quick test
+edit locally -> commit locally -> push to GitHub/GitLab -> pull on the server -> run on the server
 ```
 
-Avoid copying files directly into the main server worktree. It can leave uncommitted changes on the server, make `git pull` fail, and make it unclear which code version produced a result.
+Avoid hand-copying individual files into the main server directory. It can leave mixed versions on the server and make it unclear which code version produced a result.
 
 Recommended rule of thumb:
 
-- Use **GitHub/GitLab push and server pull** for official runs, experiments, shared work, and anything that should be reproducible.
-- Use **direct copy or rsync** only for quick debugging, and copy into a separate temporary run directory rather than the main project checkout.
+- Use **SSH Sync Mode** for servers that cannot access GitHub/GitLab or Codex login reliably.
+- Use **Server Pull Mode** when the server has stable GitHub/GitLab access and deploy credentials.
+- Use complete **Git snapshots**, not individual `scp` copies, for official runs.
 - Use a **run lock** before long-running jobs so the server code is not updated while a job is still using it.
 - Use **branches or pull requests** when multiple people or agents may edit the same project.
 

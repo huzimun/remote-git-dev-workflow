@@ -4,6 +4,8 @@ Use placeholders literally until project-specific values are confirmed:
 
 - `REMOTE_HOST_ALIAS`: SSH alias, for example `gpu-server`.
 - `REMOTE_PROJECT_DIR`: remote project path.
+- `REMOTE_DEPLOY_DIR`: remote deploy base path, for example `~/Deploy/PROJECT_NAME`.
+- `REMOTE_RUNS_DIR`: remote runs base path, for example `~/Runs/PROJECT_NAME`.
 - `LOCAL_DIR`: local project path.
 - `CENTER_REMOTE_URL`: GitHub/GitLab SSH URL.
 - `DEFAULT_BRANCH`: usually `main`.
@@ -139,7 +141,53 @@ Smoke test with an explicit Python:
 PROJECT_PYTHON=/path/to/env/bin/python bash eval/run_smoke_test.sh
 ```
 
-## Operation
+## SSH Sync Mode Operation
+
+Use this mode when the server cannot reliably access GitHub/GitLab. It deploys the exact local `HEAD` snapshot over SSH.
+
+Local publish:
+
+```powershell
+git -C LOCAL_DIR status --short
+git -C LOCAL_DIR add .
+git -C LOCAL_DIR commit -m "<message>"
+git -C LOCAL_DIR push origin DEFAULT_BRANCH
+```
+
+Require a clean tree before deployment:
+
+```powershell
+$status = git -C LOCAL_DIR status --short
+if ($status) {
+  Write-Error "Refusing to deploy: commit or discard local changes first."
+  exit 2
+}
+```
+
+Deploy `HEAD` to a release directory:
+
+```powershell
+$commit = git -C LOCAL_DIR rev-parse --short=12 HEAD
+$release = "REMOTE_DEPLOY_DIR/releases/$commit"
+ssh REMOTE_HOST_ALIAS "mkdir -p '$release'"
+git -C LOCAL_DIR archive --format=tar HEAD | ssh REMOTE_HOST_ALIAS "tar -xf - -C '$release' && printf '%s\n' '$commit' > '$release/.deploy_commit' && ln -sfn '$release' 'REMOTE_DEPLOY_DIR/current'"
+```
+
+Run the smoke test after deployment:
+
+```powershell
+ssh REMOTE_HOST_ALIAS "cd REMOTE_DEPLOY_DIR/current && bash eval/run_smoke_test.sh"
+```
+
+Create a timestamped run directory and run from it:
+
+```powershell
+ssh REMOTE_HOST_ALIAS "cd REMOTE_DEPLOY_DIR/current && bash scripts/run_remote_release.sh"
+```
+
+## Server Pull Mode Operation
+
+Use this mode when the server can reliably access GitHub/GitLab and holds deploy credentials.
 
 Local publish:
 
